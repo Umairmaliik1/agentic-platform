@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1.4
+FROM python:3.11-slim
+
+WORKDIR /app
+ARG REQUIREMENTS_FILE=requirements.txt
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies with cache mount
+COPY ${REQUIREMENTS_FILE} ./requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --prefer-binary -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Expose port
+EXPOSE 8009
+
+# Run migrations and start server
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8009 --workers ${WEB_CONCURRENCY:-2}"]
+

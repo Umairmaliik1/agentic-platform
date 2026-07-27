@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: agentic_platform_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agentic_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentic_password}
+      POSTGRES_DB: ${POSTGRES_DB:-agentic_platform}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentic_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - agentic_platform_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: agentic_platform_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - agentic_platform_network
+
+  backend:
+    image: agentic-platform-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        REQUIREMENTS_FILE: requirements.txt
+    container_name: agentic_platform_backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-agentic_user}:${POSTGRES_PASSWORD:-agentic_password}@postgres:5432/${POSTGRES_DB:-agentic_platform}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SECRET_KEY: ${SECRET_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["https://agentic-platform.namatechnologlies.com"]}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    ports:
+      - "${BACKEND_PORT:-8010}:8009"  # Changed to 8010 to avoid conflict with port 8009
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - agentic_platform_network
+
+  frontend:
+    image: agentic-platform-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://agentic-platform.namatechnologlies.com}
+    container_name: agentic_platform_frontend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"  # Changed to 8080 to avoid conflict with port 80
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - agentic_platform_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  agentic_platform_network:
+    driver: bridge
+
